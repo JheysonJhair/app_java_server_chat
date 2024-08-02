@@ -10,8 +10,10 @@ import java.util.Set;
 
 public class Server {
 
+    // Map para almacenar los escritores y socket de cada cliente por nombre de usuario
     private static Map<String, PrintWriter> clientWriters = new HashMap<>();
     private static Map<String, Socket> clientSockets = new HashMap<>();
+    // Map para almacenar el buffer y nombre de archivos por clave
     private static Map<String, byte[]> fileBuffer = new HashMap<>();
     private static Map<String, String> fileNames = new HashMap<>();
 
@@ -20,6 +22,7 @@ public class Server {
         ServerSocket listener = new ServerSocket(12346);
         try {
             while (true) {
+                // Acepta nuevas conexiones y crea un nuevo hilo para manejarlas
                 new Handler(listener.accept()).start();
             }
         } finally {
@@ -39,42 +42,45 @@ public class Server {
 
         public void run() {
             try {
+                // Inicializa los lectores y escritores para el socket del cliente
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
 
-                // Solicitar nombre de usuario
+                // Lee el nombre de usuario enviado por el cliente
                 name = in.readLine();
                 synchronized (clientWriters) {
+                    // Verifica si el nombre de usuario ya está en uso
                     if (clientWriters.containsKey(name)) {
                         out.println("ERROR Nombre de usuario ya en uso");
                         return;
                     }
+                    // Almacena el escritor y el socket del cliente
                     clientWriters.put(name, out);
                     clientSockets.put(name, socket);
                 }
 
                 System.out.println("SERVER: Cliente conectado: " + name);
 
-                // Notificar a todos los usuarios la lista de usuarios actualizada
+                // Notifica a todos los clientes la lista actualizada de usuarios
                 broadcastUserList();
-
-                // Escuchar mensajes del cliente
+                
                 String message;
                 while ((message = in.readLine()) != null) {
+                    // Maneja los mensajes recibidos del cliente
                     if (message.startsWith("FILE:")) {
-                        System.out.println("SERVER: Mensaje de archivo recibido: " + message);
+                        System.out.println("SERVER: Mensaje de archivo recibido");
                         handleFileMessage(message);
                     } else if (message.startsWith("UPDATE_FILE_LIST:")) {
                         handleUpdateFileList(message);
                     } else {
-                        System.out.println("SERVER:Mensaje recibido de " + name + ": " + message);
+                        System.out.println("SERVER: Mensaje recibido de " + name + ": " + message);
                         handleMessage(message);
                     }
                 }
             } catch (Exception e) {
                 System.out.println(e);
             } finally {
-                // Eliminar al cliente al desconectarse
+                // Elimina al cliente al desconectarse
                 if (name != null) {
                     clientWriters.remove(name);
                     clientSockets.remove(name);
@@ -88,6 +94,7 @@ public class Server {
             }
         }
 
+        // Maneja mensajes de texto normales
         private void handleMessage(String message) {
             String[] parts = message.split(":", 2);
             if (parts.length == 2) {
@@ -107,6 +114,7 @@ public class Server {
             }
         }
 
+        // Maneja mensajes que contienen archivos
         private void handleFileMessage(String message) {
             String[] parts = message.split(":", 4);
             if (parts.length == 4) {
@@ -115,15 +123,15 @@ public class Server {
                 byte[] fileContent = Base64.getDecoder().decode(parts[3]);
 
                 if (fileContent == null || fileContent.length == 0) {
-                    System.out.println("El contenido del archivo recibido es nulo o vacío.");
+                    System.out.println("SERVER: El contenido del archivo recibido es nulo o vacío.");
                 } else {
                     String key = senderReceiver + ":" + fileName;
                     fileBuffer.put(key, fileContent);
                     fileNames.put(key, fileName);
 
-                    System.out.println("Archivo almacenado en el servidor: " + fileName + ", Key: " + key + ", Tamaño: " + fileContent.length);
+                    System.out.println("SERVER: Archivo almacenado en el servidor: " + fileName + ", Key: " + key + ", Tamaño: " + fileContent.length);
 
-                    // Notificar al receptor que un archivo está disponible
+                    // Notifica al receptor que un archivo está disponible
                     String[] users = senderReceiver.split("@");
                     if (users.length == 2) {
                         String receiver = users[1].trim();
@@ -131,7 +139,7 @@ public class Server {
                             PrintWriter writer = clientWriters.get(receiver);
                             if (writer != null) {
                                 writer.println("FILE:" + senderReceiver + ":" + fileName + ":" + Base64.getEncoder().encodeToString(fileContent));
-                                System.out.println("Notificación de archivo enviado a " + receiver + ": " + key);
+                                System.out.println("SERVER: Notificación de archivo enviado a " + receiver + ": " + key);
                             }
                         }
                     }
@@ -139,8 +147,7 @@ public class Server {
             }
         }
 
-
-
+        // Maneja la actualización de la lista de archivos disponibles
         private void handleUpdateFileList(String message) {
             String[] parts = message.split(":", 2);
             if (parts.length == 2) {
@@ -154,7 +161,7 @@ public class Server {
                             String key = entry.getKey();
                             if (key.startsWith(sender + "@")) {
                                 writer.println("FILE_AVAILABLE:" + key);
-                                System.out.println("Lista de archivos actualizada para " + requester + ": " + key);
+                                System.out.println("SERVER: Lista de archivos actualizada para " + requester + ": " + key);
                             }
                         }
                     }
@@ -162,6 +169,7 @@ public class Server {
             }
         }
 
+        // Notifica a todos los clientes la lista actualizada de usuarios
         private void broadcastUserList() {
             StringBuilder userListMessage = new StringBuilder("USER_LIST");
             synchronized (clientWriters) {
@@ -172,7 +180,7 @@ public class Server {
                 for (PrintWriter writer : clientWriters.values()) {
                     writer.println(userListMessage.toString());
                 }
-                System.out.println("Lista de usuarios actualizada: " + userListMessage.toString());
+                System.out.println("SERVER: Lista de usuarios actualizada: " + userListMessage.toString());
             }
         }
     }
